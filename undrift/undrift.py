@@ -131,8 +131,11 @@ def get_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     # main(sys.argv[1], 25)
     args = get_args()
     for input_fn in args.input_file:
         run(input_fn, args.smooth_xy, args.smooth_t)
+
+if __name__ == "__main__":
+    pass
