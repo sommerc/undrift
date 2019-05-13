@@ -1,0 +1,9 @@
+.ipynb_checkpoints/
+tracking_analysis/.ipynb_checkpoints/
+tracking_analysis/analyze_tracks.egg-info
+tracking_analysis/analyze_tracks/__pycache__/
+tracking_analysis/.ipynb_checkpoints/
+*.pyc
+*.class
+*.pdf
+*.xlsx
