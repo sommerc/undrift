@@ -144,7 +144,7 @@ def str2bool(v):
 def get_args():
     parser = argparse.ArgumentParser(description=description)
     
-    parser.add_argument('input_file(s)',  type=str, nargs="+", help="Input 2D-movie(s) with dimensions: TCYX")
+    parser.add_argument('input_file',  type=str, nargs="+", help="Input 2D-movie(s) with dimensions: TCYX")
     parser.add_argument('--smooth_xy', type=float, default=31, help="Sigma of spatial Gaussian smoothing of the vector field (31)")
     parser.add_argument('--smooth_t',  type=float, default= 1, help="Sigma of temporal Gaussian smoothing of the vector field (1)")
     parser.add_argument('--pre_reg',   type=str2bool, nargs='?', const=True, default=False,   help="Apply translational pre-registration (False)")
