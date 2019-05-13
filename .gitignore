@@ -1,9 +1,10 @@
 .ipynb_checkpoints/
-tracking_analysis/.ipynb_checkpoints/
-tracking_analysis/analyze_tracks.egg-info
-tracking_analysis/analyze_tracks/__pycache__/
-tracking_analysis/.ipynb_checkpoints/
+Undrift.egg-info/
+*.tif
+*.txt
+*.tiff
 *.pyc
 *.class
 *.pdf
 *.xlsx
+*.db
