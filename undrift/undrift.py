@@ -6,51 +6,60 @@ import argparse
 import tifffile
 from tqdm import tqdm
 from skimage import filters
+from skimage import feature
 from scipy import ndimage as ndi
 from scipy.ndimage.interpolation import geometric_transform
 
-FARNEBACK_PARAMETER = {"levels":3, 
-                        "winsize":7, 
-                        "iterations":3, 
-                        "poly_n":5, 
-                        "poly_sigma":0.4, 
-                        "flags":0}
 
-def calc_flow(img1, img2):
-    flow = cv2.calcOpticalFlowFarneback(img1, img2, None, 0.5, **FARNEBACK_PARAMETER)
-    u = flow[...,0]
-    v = flow[...,1]
-    
-    return u, v
 
-def calc_flow_stack(img_stack, smooth):
-    t_dim, y_dim, x_dim = img_stack.shape
-    of = numpy.zeros( (t_dim-1, 2, y_dim, x_dim), dtype=numpy.float32)
+class DriftEstimatorOFFarneback(object):
+    FARNEBACK_PARAMETER = {"levels" : 3, 
+                           "winsize": 7, 
+                           "iterations": 3, 
+                           "poly_n" : 5, 
+                           "poly_sigma" : 0.4, 
+                           "flags" : 0}
 
-    for i, (img1, img2) in tqdm(enumerate(zip(img_stack[:-1], img_stack[1:])), 
-                                total=t_dim-1,
-                                desc='Calculate optical flow field'):       
-        u, v = calc_flow(img1, img2)
-        # u_, v_ = smooth_flow(u, v, sigma=smooth)
-        of[i, 0, :, :] = u
-        of[i, 1, :, :] = v
+    def __init__(self):
+        pass
+
+    def calc_flow(self, img1, img2):
+        flow = cv2.calcOpticalFlowFarneback(img1, img2, None, 0.5, **self.FARNEBACK_PARAMETER)
+        u = flow[...,0]
+        v = flow[...,1]
+        
+        return u, v
+
+    def calc_flow_stack(self, img_stack):
+        t_dim, y_dim, x_dim = img_stack.shape
+        of = numpy.zeros( (t_dim-1, 2, y_dim, x_dim), dtype=numpy.float32)
+
+        for i, (img1, img2) in tqdm(enumerate(zip(img_stack[:-1], img_stack[1:])), 
+                                    total=t_dim-1,
+                                    desc="{:40s}".format('  -- Calculate optical flow field')):       
+            u, v = self.calc_flow(img1, img2)
+            of[i, 0, :, :] = u
+            of[i, 1, :, :] = v
+        return of
+
+def translational_register(imgstack):
+    for i in tqdm(range(1, imgstack.shape[0]), desc="{:40s}".format("  -- Translational registration")):
+        (oy, ox), e, p = feature.register_translation(imgstack[i-1].mean(0), imgstack[i].mean(0))
+
+        t_dim, c_dim, y_dim, x_dim = imgstack.shape
+
+        for c in range(c_dim):
+            imgstack[i, c] = ndi.shift(imgstack[i, c], (oy, ox), mode="constant")
+
+    return imgstack
+
+
+def smooth_flow(of, sigma_xy, sigma_t):
+    for uv in tqdm(range(2), desc="{:40s}".format("  -- Smoothing vector field ({}xy|{}t)".format(sigma_xy, sigma_t))):
+        of[:, 0, :, :] = filters.gaussian(of[:, 0, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="reflect")
+        of[:, 1, :, :] = filters.gaussian(of[:, 1, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="reflect")
+
     return of
-        
-        
-
-def smooth_flow(u, v, sigma):
-    u_smooth = filters.gaussian(u, sigma=sigma, preserve_range=True)
-    v_smooth = filters.gaussian(v, sigma=sigma, preserve_range=True)
-    return u_smooth, v_smooth
-
-
-def smooth_flow_(of, sigma_xy, sigma_t):
-    of_smooth = numpy.zeros(of.shape, of.dtype)
-
-    of_smooth[:, 0, :, :] = filters.gaussian(of[:, 0, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True)
-    of_smooth[:, 1, :, :] = filters.gaussian(of[:, 1, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True)
-
-    return of_smooth
 
 def undrift(imgstack, optflow):
     t_dim, c_dim, y_dim, x_dim = imgstack.shape
@@ -74,11 +83,10 @@ def undrift(imgstack, optflow):
         return (xy[1] + of[1, xy[1], xy[0]], 
                 xy[0] + of[0, xy[1], xy[0]])
 
-    for k in tqdm(range(t_dim-1), desc='Un-drift by optical flow field'):
+    for k in tqdm(range(t_dim-1), desc="{:40s}".format('  -- Un-drift movie')):
         for c in range(c_dim):
             img  = imgstack[k, c, :, :]
             
-
             coords_in_input    = shift_func_backward((xx, yy), of=optflow[:k+1, ...].sum(0))
             result[k, c, :, :] = ndi.map_coordinates(img, coords_in_input)
 
@@ -87,47 +95,61 @@ def undrift(imgstack, optflow):
 
     return result, grid_visu
 
-    
 
-
-def run(input_fn, smooth_xy, smooth_t):
-    print(input_fn)
+def run(input_fn, smooth_xy, smooth_t, pre_reg, anti_flicker):
     input_dir = os.path.dirname(os.path.abspath(input_fn))
     base_fn = os.path.splitext(os.path.basename(input_fn))[0]
 
-    print("Process", input_fn)
+    print("\n# Undrift file:", base_fn)
     
     img_stack = tifffile.imread(input_fn)
-    img_stack_merge = img_stack.mean(axis=1)
-    
-    optical_flow = calc_flow_stack(img_stack_merge, smooth=smooth_xy)
 
-    optical_flow = smooth_flow_(optical_flow, smooth_xy, smooth_t)
+    if pre_reg: img_stack = translational_register(img_stack)
+
+    img_stack_merge = img_stack.mean(axis=1)
+
+    drift_corrector = DriftEstimatorOFFarneback()
+    optical_flow = drift_corrector.calc_flow_stack(img_stack_merge)
+
+    optical_flow = smooth_flow(optical_flow, smooth_xy, smooth_t)
 
     if False:
         tifffile.imsave(os.path.join(input_dir, base_fn) + "_optflow_field.tiff", optical_flow[:, None, ...], imagej=True)
 
     drift_undone, drift_visu = undrift(img_stack, optical_flow)
 
+    if anti_flicker: drift_undone = translational_register(drift_undone)
+
+
+    print("  -- Saving output files")
     if True:
-        tifffile.imsave(os.path.join(input_dir, base_fn) + "_undrift.tiff", drift_undone, imagej=True, metadata={'Composite mode': 'composite'})
+        tifffile.imsave(os.path.join(input_dir, base_fn) + "_undrift.tiff", drift_undone[:, None, ...], imagej=True, metadata={'Composite mode': 'composite'})
 
     if True:
-        tifffile.imsave(os.path.join(input_dir, base_fn) + "_drift_visu.tiff", drift_visu, imagej=True)
+        tifffile.imsave(os.path.join(input_dir, base_fn) + "_drift_visu.tiff", drift_visu[:, None, ...], imagej=True)
 
 description = \
 """
 Un-drift tissue with dense optical flow 
 """
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def get_args():
     parser = argparse.ArgumentParser(description=description)
     
-    parser.add_argument('input_file', type=str, nargs="+", help="Input movie(s) with dimensions:TCYX")
-    parser.add_argument('--smooth_xy', type=float, default=31, help="Sigma of spatial  smoothing of the vector field")
-    parser.add_argument('--smooth_t',  type=float, default= 1, help="Sigma of temporal smoothing of the vector field")
+    parser.add_argument('input_file(s)',  type=str, nargs="+", help="Input 2D-movie(s) with dimensions: TCYX")
+    parser.add_argument('--smooth_xy', type=float, default=31, help="Sigma of spatial Gaussian smoothing of the vector field (31)")
+    parser.add_argument('--smooth_t',  type=float, default= 1, help="Sigma of temporal Gaussian smoothing of the vector field (1)")
+    parser.add_argument('--pre_reg',   type=str2bool, nargs='?', const=True, default=False,   help="Apply translational pre-registration (False)")
+    parser.add_argument('--anti_flicker', type=str2bool, nargs='?', const=True, default=False, help="Apply translational post-registration (False)")
     
-
     return parser.parse_args()
 
 
@@ -135,7 +157,7 @@ def main():
     # main(sys.argv[1], 25)
     args = get_args()
     for input_fn in args.input_file:
-        run(input_fn, args.smooth_xy, args.smooth_t)
+        run(input_fn, args.smooth_xy, args.smooth_t, args.pre_reg, args.anti_flicker)
 
 if __name__ == "__main__":
-    pass
+    main()
