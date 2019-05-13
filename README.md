@@ -22,3 +22,8 @@ Basic command:
 Command line help:
 
 ```undrift --help```
+
+### Tips
+to use undrift with spatial smoothing of 50 px for all tif files in a folder recursively on Windows, use
+
+```for /r %i in (*.tif) do undrift --smooth_xy 50 "%i"```
