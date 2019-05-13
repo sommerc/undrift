@@ -124,7 +124,7 @@ def get_args():
     parser = argparse.ArgumentParser(description=description)
     
     parser.add_argument('input_file', type=str, nargs="+", help="Input movie(s) with dimensions:TCYX")
-    parser.add_argument('--smooth_xy', type=float, default=25, help="Sigma of spatial  smoothing of the vector field")
+    parser.add_argument('--smooth_xy', type=float, default=31, help="Sigma of spatial  smoothing of the vector field")
     parser.add_argument('--smooth_t',  type=float, default= 1, help="Sigma of temporal smoothing of the vector field")
     
 
