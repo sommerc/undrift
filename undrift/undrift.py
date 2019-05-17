@@ -56,15 +56,15 @@ def translational_register(imgstack):
 
 def smooth_flow(of, sigma_xy, sigma_t):
     for uv in tqdm(range(2), desc="{:40s}".format("  -- Smoothing vector field ({}xy|{}t)".format(sigma_xy, sigma_t))):
-        of[:, 0, :, :] = filters.gaussian(of[:, 0, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="reflect")
-        of[:, 1, :, :] = filters.gaussian(of[:, 1, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="reflect")
+        of[:, 0, :, :] = filters.gaussian(of[:, 0, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="nearest")
+        of[:, 1, :, :] = filters.gaussian(of[:, 1, :, :], sigma=(sigma_t, sigma_xy, sigma_xy), preserve_range=True, mode="nearest")
 
     return of
 
 def undrift(imgstack, optflow):
     t_dim, c_dim, y_dim, x_dim = imgstack.shape
 
-    xx, yy = numpy.meshgrid(numpy.arange(x_dim), numpy.arange(y_dim))
+    
     
     grid_visu = numpy.zeros((t_dim, y_dim, x_dim), numpy.uint8)
 
@@ -73,25 +73,36 @@ def undrift(imgstack, optflow):
     grid_visu[0, 1::8,  ::8] = 255 
     grid_visu[0,  ::8, 1::8] = 255 
 
-    result = numpy.zeros((t_dim-1, c_dim, y_dim, x_dim), imgstack.dtype)
+    result = numpy.zeros((t_dim, c_dim, y_dim, x_dim), imgstack.dtype)
 
     def shift_func_forward(xy, of):
-        return (xy[1] - of[1, xy[1], xy[0]], 
-                xy[0] - of[0, xy[1], xy[0]])
+        return (
+                xy[0] - of[1, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                xy[1] - of[0, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                )
 
     def shift_func_backward(xy, of):
-        return (xy[1] + of[1, xy[1], xy[0]], 
-                xy[0] + of[0, xy[1], xy[0]])
+        return (
+                xy[0] + of[1, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                xy[1] + of[0, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                )
 
-    for k in tqdm(range(t_dim-1), desc="{:40s}".format('  -- Un-drift movie')):
+    result[0, :c_dim] = imgstack[0, :c_dim]
+
+    xxyy = numpy.meshgrid(numpy.arange(x_dim), numpy.arange(y_dim))[::-1]
+    xxyy2 = numpy.meshgrid(numpy.arange(x_dim), numpy.arange(y_dim))[::-1]
+    for k in tqdm(range(1, t_dim), desc="{:40s}".format('  -- Un-drift movie')):
+        xxyy = shift_func_backward(xxyy, of=optflow[k-1, ...])
+        xxyy2 = shift_func_forward(xxyy2, of=optflow[k-1, ...])
+
         for c in range(c_dim):
             img  = imgstack[k, c, :, :]
             
-            coords_in_input    = shift_func_backward((xx, yy), of=optflow[:k+1, ...].sum(0))
-            result[k, c, :, :] = ndi.map_coordinates(img, coords_in_input)
+            
+            result[k, c, :, :] = ndi.map_coordinates(img, xxyy)
 
-            coords_in_input      = shift_func_forward((xx, yy), of=optflow[:k+1, ...].sum(0))
-            grid_visu[k+1, :, :] = ndi.map_coordinates(grid_visu[0, :, :], coords_in_input)
+            # coords_in_input      = shift_func_forward((xx, yy), of=optflow[:k+1, ...].sum(0))
+            grid_visu[k, :, :] = ndi.map_coordinates(grid_visu[0, :, :], xxyy2)
 
     return result, grid_visu
 
@@ -108,13 +119,16 @@ def run(input_fn, smooth_xy, smooth_t, pre_reg, anti_flicker):
 
     img_stack_merge = img_stack.mean(axis=1)
 
-    drift_corrector = DriftEstimatorOFFarneback()
-    optical_flow = drift_corrector.calc_flow_stack(img_stack_merge)
+    
 
-    optical_flow = smooth_flow(optical_flow, smooth_xy, smooth_t)
+    if True:
+        drift_corrector = DriftEstimatorOFFarneback()
+        optical_flow = drift_corrector.calc_flow_stack(img_stack_merge)
 
-    if False:
+        optical_flow = smooth_flow(optical_flow, smooth_xy, smooth_t)
         tifffile.imsave(os.path.join(input_dir, base_fn) + "_optflow_field.tiff", optical_flow[:, None, ...], imagej=True)
+    else:
+        optical_flow = tifffile.imread(os.path.join(input_dir, base_fn) + "_optflow_field.tiff")
 
     drift_undone, drift_visu = undrift(img_stack, optical_flow)
 
