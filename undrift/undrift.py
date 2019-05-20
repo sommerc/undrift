@@ -87,14 +87,14 @@ def undrift(imgstack, optflow):
 
     def shift_func_forward(xy, of):
         return (
-                xy[0] - of[1, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
-                xy[1] - of[0, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                xy[0] - of[1, xy[0].astype(numpy.int32).clip(0, y_dim-1), xy[1].astype(numpy.int32).clip(0,x_dim-1)],
+                xy[1] - of[0, xy[0].astype(numpy.int32).clip(0, y_dim-1), xy[1].astype(numpy.int32).clip(0,x_dim-1)],
                 )
 
     def shift_func_backward(xy, of):
         return (
-                xy[0] + of[1, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
-                xy[1] + of[0, xy[0].astype(numpy.int32).clip(0,511), xy[1].astype(numpy.int32).clip(0,511)],
+                xy[0] + of[1, xy[0].astype(numpy.int32).clip(0, y_dim-1), xy[1].astype(numpy.int32).clip(0,x_dim-1)],
+                xy[1] + of[0, xy[0].astype(numpy.int32).clip(0, y_dim-1), xy[1].astype(numpy.int32).clip(0,x_dim-1)],
                 )
 
     result[0, :c_dim] = imgstack[0, :c_dim]
