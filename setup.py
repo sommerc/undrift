@@ -12,7 +12,7 @@ setup(
     entry_points = {
         "console_scripts": ['undrift = undrift.undrift:main']
         },
-    version = "0.1",
+    version = "0.2",
     description = description,
     long_description = description,
     author = "Christoph Sommer",
