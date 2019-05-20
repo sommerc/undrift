@@ -49,7 +49,7 @@ def translational_register(imgstack):
         t_dim, c_dim, y_dim, x_dim = imgstack.shape
 
         for c in range(c_dim):
-            imgstack[i, c] = ndi.shift(imgstack[i, c], (oy, ox), mode="constant")
+            imgstack[i, c] = ndi.shift(imgstack[i, c], (oy, ox), mode="nearest")
 
     return imgstack
 
@@ -62,16 +62,26 @@ def smooth_flow(of, sigma_xy, sigma_t):
     return of
 
 def undrift(imgstack, optflow):
-    t_dim, c_dim, y_dim, x_dim = imgstack.shape
-
+    t_dim, c_dim, y_dim, x_dim = imgstack.shape    
     
-    
-    grid_visu = numpy.zeros((t_dim, y_dim, x_dim), numpy.uint8)
+    TILE_SIZE = 16
 
-    grid_visu[0,  ::8,  ::8] = 255 
-    grid_visu[0, 1::8, 1::8] = 255 
-    grid_visu[0, 1::8,  ::8] = 255 
-    grid_visu[0,  ::8, 1::8] = 255 
+    checker_board = numpy.zeros((t_dim, y_dim, x_dim), numpy.uint8)
+    block_1 = numpy.ones((TILE_SIZE, TILE_SIZE), numpy.uint8)
+    block_2 = numpy.ones((TILE_SIZE, TILE_SIZE), numpy.uint8)
+
+    block_1 *=32
+    block_2 *=128
+    block = numpy.c_[numpy.r_[block_1, block_2],
+                     numpy.r_[block_2, block_1]]
+
+    checker_board[0, :(y_dim//(2*TILE_SIZE)) * 2*TILE_SIZE, 
+                     :(x_dim//(2*TILE_SIZE)) * 2*TILE_SIZE] = numpy.tile(block, (y_dim//(2*TILE_SIZE), 
+                                                                                x_dim//(2*TILE_SIZE)))
+
+    grid_visu = numpy.zeros((t_dim, c_dim+1, y_dim, x_dim), numpy.uint8)
+    grid_visu[:, :c_dim, :, :] = imgstack
+    grid_visu[:, -1, :, :] = checker_board
 
     result = numpy.zeros((t_dim, c_dim, y_dim, x_dim), imgstack.dtype)
 
@@ -102,7 +112,7 @@ def undrift(imgstack, optflow):
             result[k, c, :, :] = ndi.map_coordinates(img, xxyy)
 
             # coords_in_input      = shift_func_forward((xx, yy), of=optflow[:k+1, ...].sum(0))
-            grid_visu[k, :, :] = ndi.map_coordinates(grid_visu[0, :, :], xxyy2)
+            grid_visu[k, -1, :, :] = ndi.map_coordinates(grid_visu[0, -1, :, :], xxyy2)
 
     return result, grid_visu
 
@@ -115,11 +125,14 @@ def run(input_fn, smooth_xy, smooth_t, pre_reg, anti_flicker):
     
     img_stack = tifffile.imread(input_fn)
 
-    if pre_reg: img_stack = translational_register(img_stack)
+    t_dim, *c_dim, y_dim, x_dim = img_stack.shape
 
+    if len(c_dim) == 0:
+        img_stack = img_stack[:, None, ...]
+    
     img_stack_merge = img_stack.mean(axis=1)
 
-    
+    if pre_reg: img_stack = translational_register(img_stack)
 
     if True:
         drift_corrector = DriftEstimatorOFFarneback()
@@ -140,7 +153,7 @@ def run(input_fn, smooth_xy, smooth_t, pre_reg, anti_flicker):
         tifffile.imsave(os.path.join(input_dir, base_fn) + "_undrift.tiff", drift_undone[:, None, ...], imagej=True, metadata={'Composite mode': 'composite'})
 
     if True:
-        tifffile.imsave(os.path.join(input_dir, base_fn) + "_drift_visu.tiff", drift_visu[:, None, ...], imagej=True)
+        tifffile.imsave(os.path.join(input_dir, base_fn) + "_drift_visu.tiff", drift_visu[:, None, ...], imagej=True, metadata={'Composite mode': 'composite'})
 
 description = \
 """
