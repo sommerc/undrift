@@ -33,7 +33,9 @@ Command line help:
 
 ```undrift --help```
 
-### How to apply recursively to many images in folder sturcture?
+### How to apply recursively to many images in folder sturcture on Windows?
 to use undrift with spatial smoothing of 50 px for all tif files in a folder recursively on Windows, use
 
 ```for /r %i in (*.tif) do undrift --smooth_xy 50 "%i"```
+
+in the (Anaconda) command prompt
