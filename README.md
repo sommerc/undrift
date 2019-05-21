@@ -4,11 +4,11 @@ using it for warping images back to first frame.
 
 It comes as command line tool for Python >= 3.6
 
-# What does it do?
-#### Original movie with non-linear local drift in the tissue
+### What does it do?
+#### Original movie with non-linear, local drift in the tissue
 ![Original](example/res/a_orig.gif) 
 
-#### Drift estimation via smooth dense optical flow
+#### Drift estimation via smooth, dense optical-flow
 ![Drift estimation](example/res/b_drift.gif) 
 
 #### Undrifting result
@@ -33,7 +33,7 @@ Command line help:
 
 ```undrift --help```
 
-### Tips
+### How to apply recursively to many images in folder sturcture?
 to use undrift with spatial smoothing of 50 px for all tif files in a folder recursively on Windows, use
 
 ```for /r %i in (*.tif) do undrift --smooth_xy 50 "%i"```
